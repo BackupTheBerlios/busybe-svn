@@ -32,14 +32,15 @@ import crypt, string, random
 import datetime
 import re
 import turbogears
-from turbogears import controllers
-from sqlobject import SQLObjectNotFound 
-from sqlobject.sqlbuilder import AND,OR,NOT,LEFTJOINOn
+from turbogears import controllers, identity, redirect
+from sqlobject import SQLObject, SQLObjectNotFound, BoolCol
+from sqlobject.sqlbuilder import AND, OR, NOT, LEFTJOINOn
 from MySQLdb.connections import OperationalError
 from formencode import validators
 
 BaseUrl = '/'
 Now = datetime.datetime.now
+
 
 def beautify(text):
 	'''Capitalize the first letter of each word.
@@ -50,6 +51,7 @@ def beautify(text):
 	text = ' '.join(words)
 	return text
 
+
 def expose(*args, **kw):
 	'''BusyBe's version of Turbogear's version of Cherrypy's expose.
 	
@@ -57,6 +59,7 @@ def expose(*args, **kw):
 	'''
 	decorator = turbogears.expose(*args, **kw)
 	return decorator
+
 
 def get_count(code):
 	'''Return an integer for an auto-generated code.
@@ -68,10 +71,12 @@ def get_count(code):
 	#TODO Return an exception if count cannot be an integer
 	return int(count)
 
+
 def get_salt(chars = string.letters + string.digits):
 	'''Get two random letter/number to be used for the crypt.
 	'''
 	return random.choice(chars) + random.choice(chars)
+
 
 def sort_page_rows(rows, sort_page_by=None):
 	'''Sort a list of entries retrieved from a database query.
@@ -95,14 +100,47 @@ def sort_page_rows(rows, sort_page_by=None):
 			rows.append(tmp[key])
 	return rows
 
+
 def select_all(model_table):
 	'''Get all entries from a DB table that's not deleted.
 	'''
 	return model_table.select(model_table.q.deleted==False)
 
 
+class AuthController(controllers.Root):
+	@turbogears.expose(template="templates.login")
+	def login(self, forward_url=None, previous_url=None, *args, **kw):
+
+		if not identity.current.anonymous \
+			and identity.was_login_attempted() \
+			and not identity.get_identity_errors():
+			raise redirect(forward_url)
+
+		forward_url=None
+		previous_url= cherrypy.request.path
+
+		if identity.was_login_attempted():
+			msg=_("The credentials you supplied were not correct or "
+				   "did not grant access to this resource.")
+		elif identity.get_identity_errors():
+			msg=_("You must provide your credentials before accessing "
+				   "this resource.")
+		else:
+			msg=_("Please log in.")
+			forward_url= cherrypy.request.headers.get("Referer", "/")
+		cherrypy.response.status=403
+		return dict(message=msg, previous_url=previous_url, logging_in=True,
+					original_parameters=cherrypy.request.params,
+					forward_url=forward_url)
+
+	@turbogears.expose()
+	def logout(self):
+		identity.current.logout()
+		raise redirect("/")
+
+
 class MenuController(controllers.Root):
-	exclude = ['exclude', 'index', 'module', 'modules', ]
+	exclude = ['exclude', 'index', 'module', 'modules', 'accesslog', 'is_app_root', 'msglog', 'msglogfunc', ]
 	def _get_modules(self):
 		modules = (attr for attr in dir(self.__class__) if attr not in self.exclude and attr != 'get_modules' and not re.match('^_', attr))
 		return modules
@@ -168,7 +206,7 @@ class BaseController(controllers.Root):
 	_details.__doc__ = ''
 
 	def _edit(self, id):
-		row = self.db_obj.get(id)
+		row = self.tbl_obj.get(id)
 		for name in self.search_fields:
 			exec('self.fix_field(name, value=row.%s)' % name)
 			if self.fields[name].has_key('type'):
@@ -206,8 +244,8 @@ class BaseController(controllers.Root):
 		else:
 			self.fields[name]['value'] = ''
 		if not self.fields[name].has_key('type'):
-			if name in self.db_obj._columnDict.keys():
-				col_type = str(self.db_obj._columnDict[name])
+			if name in self.tbl_obj._columnDict.keys():
+				col_type = str(self.tbl_obj._columnDict[name])
 				if re.search('Bool', col_type):
 					self.fields[name]['type'] = 'bool'
 				elif re.search('Int', col_type):
@@ -220,27 +258,27 @@ class BaseController(controllers.Root):
 					self.fields[name]['type'] = 'datetime'
 				elif re.search('Date', col_type):
 					self.fields[name]['type'] = 'date'
-			if name+'ID' in self.db_obj._columns:
+			if name+'ID' in self.tbl_obj._columns:
 				self.fields[name]['type'] = 'select'
 		for k,v in kw.items():
 			self.fields[name][k] = v
 		# These lines remove the fields that are not in the database -- disabled for recursive searches
-		#if name not in self.db_obj._columnDict.keys() and name+'ID' not in self.db_obj._columnDict.keys():
+		#if name not in self.tbl_obj._columnDict.keys() and name+'ID' not in self.tbl_obj._columnDict.keys():
 		#	del self.fields[name]
 	_fix_field.__doc__ = ''
 
 	def _get_query_results(self, *clauses):
-		return self.db_obj.select(AND(*clauses))
+		return self.tbl_obj.select(AND(*clauses))
 
 	def _get_rows(self, **kw):
 		if 'search_field' in kw and kw['search_field'] in kw:
 			self.s_field = s_field = kw['search_field']
 			self.s_value = s_value = kw[s_field]
-			s_table = self.db_obj
+			s_table = self.tbl_obj
 			if self.fields.has_key(s_field) and self.fields[s_field].has_key('type'):
 				if s_field in s_table._columnDict.keys():
 					rows = self._get_query_results(
-							self.db_obj.q.deleted==False,
+							self.tbl_obj.q.deleted==False,
 							getattr(s_table.q, s_field)==s_value,
 						)
 				elif s_field+'ID' in s_table._columnDict.keys():
@@ -257,7 +295,7 @@ class BaseController(controllers.Root):
 					else:
 						self.s_value = int(self.s_value)
 					rows = self._get_query_results(
-							self.db_obj.q.deleted==False,
+							self.tbl_obj.q.deleted==False,
 							getattr(s_table.q, s_field+'ID')==s_value,
 						)
 			elif '.' in s_field:
@@ -266,7 +304,7 @@ class BaseController(controllers.Root):
 				queries = []
 				k_cols = k.split('.')
 				k_tabs = self.fields[k]['tables']
-				exec('queries.append(self.db_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
+				exec('queries.append(self.tbl_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
 				for cnt in range(0, len(k_tabs)):
 					if cnt < len(k_tabs)-1:
 						exec('queries.append(k_tabs[cnt].q.%sID==k_tabs[cnt+1].q.id)' % (k_cols[cnt+1]))
@@ -275,7 +313,7 @@ class BaseController(controllers.Root):
 				rows = self._get_query_results(*queries)
 			else:
 				rows = self._get_query_results(
-						self.db_obj.q.deleted==False,
+						self.tbl_obj.q.deleted==False,
 						getattr(s_table.q, s_field)==s_value,
 					)
 		elif 'search_field' in kw and kw['search_field']+'_last' in kw:
@@ -283,9 +321,9 @@ class BaseController(controllers.Root):
 			s_value_first = kw[kw['search_field']+'_first']
 			s_value_last = kw[kw['search_field']+'_last']
 			self.s_value = (s_value_first, s_value_last)
-			s_table = self.db_obj
+			s_table = self.tbl_obj
 			rows = self._get_query_results(
-					self.db_obj.q.deleted==False,
+					self.tbl_obj.q.deleted==False,
 					getattr(s_table.q, s_field)>=s_value_first,
 					getattr(s_table.q, s_field)<=s_value_last,
 				)
@@ -296,7 +334,7 @@ class BaseController(controllers.Root):
 			for k in self.search_fields:
 				if k in kw.keys() and kw[k]:
 					try:
-						exec('queries.append(self.db_obj.q.%s=="%s")' % (k, kw[k]))
+						exec('queries.append(self.tbl_obj.q.%s=="%s")' % (k, kw[k]))
 					except KeyError:
 						if self.fields[k].get('type', '') == 'foreign_text':
 							exec("results = self.fields[k]['table'].selectBy(%s=kw[k])" % self.fields[k]['column'])
@@ -304,19 +342,19 @@ class BaseController(controllers.Root):
 							for result in results:
 								s_value = result.id
 								break
-							exec('queries.append(self.db_obj.q.%sID==%s)' % (k, s_value))
+							exec('queries.append(self.tbl_obj.q.%sID==%s)' % (k, s_value))
 						elif '.' in k:
 							# for foreign keys or foreign keys on foreign keys, go over each one and add each table to the queries (where clause)
 							k_cols = k.split('.')
 							k_tabs = self.fields[k]['tables']
-							exec('queries.append(self.db_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
+							exec('queries.append(self.tbl_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
 							for cnt in range(0, len(k_tabs)):
 								if cnt < len(k_tabs)-1:
 									exec('queries.append(k_tabs[cnt].q.%sID==k_tabs[cnt+1].q.id)' % (k_cols[cnt+1]))
 								else:
 									exec('queries.append(k_tabs[cnt].q.%s=="%s")' % (k_cols[cnt+1], kw[k]))
 						else:
-							exec('queries.append(self.db_obj.q.%sID==%s)' % (k, kw[k]))
+							exec('queries.append(self.tbl_obj.q.%sID==%s)' % (k, kw[k]))
 					if not self.fields.has_key(k):
 						self.fields[k] = {}
 					self.fields[k]['value'] = kw[k]
@@ -324,21 +362,21 @@ class BaseController(controllers.Root):
 					print '-'*64
 					print 'k', kw['%s_first' % k], ': k', kw['%s_last' % k]
 					print '-'*64
-					exec('queries.append(self.db_obj.q.%s>="%s")' % (k, kw[k+'_first']))
-					exec('queries.append(self.db_obj.q.%s<="%s")' % (k, kw[k+'_last']))
+					exec('queries.append(self.tbl_obj.q.%s>="%s")' % (k, kw[k+'_first']))
+					exec('queries.append(self.tbl_obj.q.%s<="%s")' % (k, kw[k+'_last']))
 					if not self.fields.has_key(k):
 						self.fields[k] = {}
 					self.fields[k]['value'] = kw[k+'_first']
 			print queries
 			rows = self._get_query_results(
-					self.db_obj.q.deleted==False,
+					self.tbl_obj.q.deleted==False,
 					*queries
 				)
 		else:
 			self.s_field = s_field = ''
 			self.s_value = s_value = ''
 			rows = self._get_query_results(
-					self.db_obj.q.deleted==False,
+					self.tbl_obj.q.deleted==False,
 				)
 		return rows
 
@@ -381,7 +419,7 @@ class BaseController(controllers.Root):
 		cherrypy.session['page'] = page
 		row_start = (page-1)*show
 		row_end = (page)*show
-		try: self.db_obj.createTable()
+		try: self.tbl_obj.createTable()
 		except: pass
 		#for field in self.detail_fields:
 		#	self.fix_field(field)
@@ -424,7 +462,7 @@ class BaseController(controllers.Root):
 		#hub.begin()
 		for id in select:
 			if int(id) > 0:
-				item = self.db_obj.get(id)
+				item = self.tbl_obj.get(id)
 				#item.delete(id) # do this instead if the model has no delete field
 				item.deleted = True
 				for field in self.detail_fields:
@@ -482,7 +520,7 @@ class BaseController(controllers.Root):
 				fields = self.fields,
 				id = '',
 				new = True,
-				db = self.db_obj,
+				db = self.tbl_obj,
 			)
 	_new.__doc__ = ''
 
@@ -490,9 +528,9 @@ class BaseController(controllers.Root):
 		#self.model.hub.begin()
 		kw = self.validate(**kw)
 		if new == 'True':
-			entry = self.db_obj(deleted=False, **kw)
+			entry = self.tbl_obj(deleted=False, **kw)
 		else:
-			entry = self.db_obj.get(id)
+			entry = self.tbl_obj.get(id)
 			for k,v in kw.items():
 				setattr(entry, k, v)
 		return entry.id
@@ -607,7 +645,7 @@ class BaseController(controllers.Root):
 						kw[k] = v
 				else:
 					try:
-						col_type = str(self.db_obj._columnDict[k])
+						col_type = str(self.tbl_obj._columnDict[k])
 					except KeyError:
 						col_type = 'select'
 					if re.search('Bool', col_type):
@@ -618,7 +656,7 @@ class BaseController(controllers.Root):
 						kw[k] = float(v)
 			else:
 				try:
-					col_type = str(self.db_obj._columnDict[k])
+					col_type = str(self.tbl_obj._columnDict[k])
 					if re.search('Bool', col_type):
 						kw[k] = bool(v)
 					elif re.search('Int', col_type):
@@ -683,7 +721,7 @@ class BaseController(controllers.Root):
 		else:
 			period = ''
 		prefix = '%s%s' % (pre, period)
-		tbl = self.db_obj
+		tbl = self.tbl_obj
 		code = tbl.select(tbl.q.deleted==False).max(field)
 		if code and re.search(prefix, code):
 			count = get_count(code)+1
@@ -789,4 +827,9 @@ class BaseController(controllers.Root):
 
 	index = item
 
+
+class BusyBeObject(SQLObject):
+	'''This class stands as the default DB table for BusyBe.
+	'''
+	deleted = BoolCol(default=False)
 

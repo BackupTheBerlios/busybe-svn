@@ -104,7 +104,10 @@ def sort_page_rows(rows, sort_page_by=None):
 def select_all(model_table):
 	'''Get all entries from a DB table that's not deleted.
 	'''
-	return model_table.select(model_table.q.deleted==False)
+	if hasattr(model_table.q, 'deleted'):
+		return model_table.select(model_table.q.deleted==False)
+	else:
+		return model_table.select()
 
 
 class AuthController(controllers.Root):
@@ -205,6 +208,21 @@ class BaseController(controllers.Root):
 			)
 	_details.__doc__ = ''
 
+	def _delete_item(self, id):
+		item = self.tbl_obj.get(id)
+		# mark item as deleted if the table has a column name deleted
+		# otherwise, just delete the item
+		if hasattr(item, 'deleted'):
+			item.deleted = True
+			for field in self.detail_fields:
+				try:
+					exec('value = item.%s' % field)
+					setattr(item, field, 'deleted%s\b%s' % (item.id, value))
+				except:
+					pass
+		else:
+			item.delete(id)
+
 	def _edit(self, id):
 		row = self.tbl_obj.get(id)
 		for name in self.search_fields:
@@ -267,117 +285,132 @@ class BaseController(controllers.Root):
 		#	del self.fields[name]
 	_fix_field.__doc__ = ''
 
-	def _get_query_results(self, *clauses):
-		return self.tbl_obj.select(AND(*clauses))
+	def _get_query_results(self, *clauses, **kw):
+		if hasattr(self.tbl_obj.q, 'deleted'):
+			return self.tbl_obj.select(AND(
+					self.tbl_obj.q.deleted==False,
+					*clauses
+				))
+		elif (kw.has_key('show_del') and kw['show_del']):
+			return self.tbl_obj.select(AND(*clauses))
+		elif len(clauses) > 1:
+			return self.tbl_obj.select(AND(*clauses))
+		else:
+			return self.tbl_obj.select()
 
-	def _get_rows(self, **kw):
-		if 'search_field' in kw and kw['search_field'] in kw:
-			self.s_field = s_field = kw['search_field']
-			self.s_value = s_value = kw[s_field]
-			s_table = self.tbl_obj
-			if self.fields.has_key(s_field) and self.fields[s_field].has_key('type'):
-				if s_field in s_table._columnDict.keys():
-					rows = self._get_query_results(
-							self.tbl_obj.q.deleted==False,
-							getattr(s_table.q, s_field)==s_value,
-						)
-				elif s_field+'ID' in s_table._columnDict.keys():
-					if self.fields[s_field]['type'] == 'select':
-						for entry in self.fields[s_field]['options']:
-							if s_value and int(s_value) == entry.id:
-								self.s_value = entry
-					elif self.fields[s_field]['type'] == 'foreign_text':
-						exec("results = self.fields[s_field]['table'].selectBy(%s=kw[s_field])" % self.fields[s_field]['column'])
+	def _get_rows_single_search_regular(self, **kw):
+		self.s_field = s_field = kw['search_field']
+		self.s_value = s_value = kw[s_field]
+		s_table = self.tbl_obj
+		if self.fields.has_key(s_field) and self.fields[s_field].has_key('type'):
+			if s_field in s_table._columnDict.keys():
+				rows = self._get_query_results(
+						getattr(s_table.q, s_field)==s_value,
+					)
+			elif s_field+'ID' in s_table._columnDict.keys():
+				if self.fields[s_field]['type'] == 'select':
+					for entry in self.fields[s_field]['options']:
+						if s_value and int(s_value) == entry.id:
+							self.s_value = entry
+				elif self.fields[s_field]['type'] == 'foreign_text':
+					exec("results = self.fields[s_field]['table'].selectBy(%s=kw[s_field])" % self.fields[s_field]['column'])
+					s_value = None
+					for result in results:
+						s_value = result.id
+						break
+				else:
+					self.s_value = int(self.s_value)
+				rows = self._get_query_results(
+						getattr(s_table.q, s_field+'ID')==s_value,
+					)
+		elif '.' in s_field:
+		# for foreign keys or foreign keys on foreign keys, go over each one and add each table to the queries (where clause)
+			k = s_field
+			queries = []
+			k_cols = k.split('.')
+			k_tabs = self.fields[k]['tables']
+			exec('queries.append(self.tbl_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
+			for cnt in range(0, len(k_tabs)):
+				if cnt < len(k_tabs)-1:
+					exec('queries.append(k_tabs[cnt].q.%sID==k_tabs[cnt+1].q.id)' % (k_cols[cnt+1]))
+				else:
+					exec('queries.append(k_tabs[cnt].q.%s=="%s")' % (k_cols[cnt+1], kw[k]))
+			rows = self._get_query_results(*queries)
+		else:
+			rows = self._get_query_results(
+					getattr(s_table.q, s_field)==s_value,
+				)
+		return rows
+
+	def _get_rows_single_search_range(self, **kw):
+		self.s_field = s_field = kw['search_field']
+		s_value_first = kw[kw['search_field']+'_first']
+		s_value_last = kw[kw['search_field']+'_last']
+		self.s_value = (s_value_first, s_value_last)
+		s_table = self.tbl_obj
+		rows = self._get_query_results(
+				getattr(s_table.q, s_field)>=s_value_first,
+				getattr(s_table.q, s_field)<=s_value_last,
+			)
+		return rows
+
+	def _get_rows_detailed_search(self, **kw):
+		self.s_field = s_field = ''
+		self.s_value = s_value = ''
+		queries = []
+		for k in self.search_fields:
+			if k in kw.keys() and kw[k]:
+				try:
+					exec('queries.append(self.tbl_obj.q.%s=="%s")' % (k, kw[k]))
+				except KeyError:
+					if self.fields[k].get('type', '') == 'foreign_text':
+						exec("results = self.fields[k]['table'].selectBy(%s=kw[k])" % self.fields[k]['column'])
 						s_value = None
 						for result in results:
 							s_value = result.id
 							break
+						exec('queries.append(self.tbl_obj.q.%sID==%s)' % (k, s_value))
+					elif '.' in k:
+						# for foreign keys or foreign keys on foreign keys, go over each one and add each table to the queries (where clause)
+						k_cols = k.split('.')
+						k_tabs = self.fields[k]['tables']
+						exec('queries.append(self.tbl_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
+						for cnt in range(0, len(k_tabs)):
+							if cnt < len(k_tabs)-1:
+								exec('queries.append(k_tabs[cnt].q.%sID==k_tabs[cnt+1].q.id)' % (k_cols[cnt+1]))
+							else:
+								exec('queries.append(k_tabs[cnt].q.%s=="%s")' % (k_cols[cnt+1], kw[k]))
 					else:
-						self.s_value = int(self.s_value)
-					rows = self._get_query_results(
-							self.tbl_obj.q.deleted==False,
-							getattr(s_table.q, s_field+'ID')==s_value,
-						)
-			elif '.' in s_field:
-			# for foreign keys or foreign keys on foreign keys, go over each one and add each table to the queries (where clause)
-				k = s_field
-				queries = []
-				k_cols = k.split('.')
-				k_tabs = self.fields[k]['tables']
-				exec('queries.append(self.tbl_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
-				for cnt in range(0, len(k_tabs)):
-					if cnt < len(k_tabs)-1:
-						exec('queries.append(k_tabs[cnt].q.%sID==k_tabs[cnt+1].q.id)' % (k_cols[cnt+1]))
-					else:
-						exec('queries.append(k_tabs[cnt].q.%s=="%s")' % (k_cols[cnt+1], kw[k]))
-				rows = self._get_query_results(*queries)
-			else:
-				rows = self._get_query_results(
-						self.tbl_obj.q.deleted==False,
-						getattr(s_table.q, s_field)==s_value,
-					)
+						exec('queries.append(self.tbl_obj.q.%sID==%s)' % (k, kw[k]))
+				if not self.fields.has_key(k):
+					self.fields[k] = {}
+				self.fields[k]['value'] = kw[k]
+			elif '%s_first' % k in kw.keys() and kw['%s_first' % k]:
+				print '-'*64
+				print 'k', kw['%s_first' % k], ': k', kw['%s_last' % k]
+				print '-'*64
+				exec('queries.append(self.tbl_obj.q.%s>="%s")' % (k, kw[k+'_first']))
+				exec('queries.append(self.tbl_obj.q.%s<="%s")' % (k, kw[k+'_last']))
+				if not self.fields.has_key(k):
+					self.fields[k] = {}
+				self.fields[k]['value'] = kw[k+'_first']
+		print queries
+		rows = self._get_query_results(
+				*queries
+			)
+		return rows
+
+	def _get_rows(self, **kw):
+		if 'search_field' in kw and kw['search_field'] in kw:
+			rows = self._get_rows_single_search_regular(**kw)
 		elif 'search_field' in kw and kw['search_field']+'_last' in kw:
-			self.s_field = s_field = kw['search_field']
-			s_value_first = kw[kw['search_field']+'_first']
-			s_value_last = kw[kw['search_field']+'_last']
-			self.s_value = (s_value_first, s_value_last)
-			s_table = self.tbl_obj
-			rows = self._get_query_results(
-					self.tbl_obj.q.deleted==False,
-					getattr(s_table.q, s_field)>=s_value_first,
-					getattr(s_table.q, s_field)<=s_value_last,
-				)
+			rows = self._get_rows_single_search_range(**kw)
 		elif kw.has_key('search'):
-			self.s_field = s_field = ''
-			self.s_value = s_value = ''
-			queries = []
-			for k in self.search_fields:
-				if k in kw.keys() and kw[k]:
-					try:
-						exec('queries.append(self.tbl_obj.q.%s=="%s")' % (k, kw[k]))
-					except KeyError:
-						if self.fields[k].get('type', '') == 'foreign_text':
-							exec("results = self.fields[k]['table'].selectBy(%s=kw[k])" % self.fields[k]['column'])
-							s_value = None
-							for result in results:
-								s_value = result.id
-								break
-							exec('queries.append(self.tbl_obj.q.%sID==%s)' % (k, s_value))
-						elif '.' in k:
-							# for foreign keys or foreign keys on foreign keys, go over each one and add each table to the queries (where clause)
-							k_cols = k.split('.')
-							k_tabs = self.fields[k]['tables']
-							exec('queries.append(self.tbl_obj.q.%sID==k_tabs[0].q.id)' % (k_cols[0]))
-							for cnt in range(0, len(k_tabs)):
-								if cnt < len(k_tabs)-1:
-									exec('queries.append(k_tabs[cnt].q.%sID==k_tabs[cnt+1].q.id)' % (k_cols[cnt+1]))
-								else:
-									exec('queries.append(k_tabs[cnt].q.%s=="%s")' % (k_cols[cnt+1], kw[k]))
-						else:
-							exec('queries.append(self.tbl_obj.q.%sID==%s)' % (k, kw[k]))
-					if not self.fields.has_key(k):
-						self.fields[k] = {}
-					self.fields[k]['value'] = kw[k]
-				elif '%s_first' % k in kw.keys() and kw['%s_first' % k]:
-					print '-'*64
-					print 'k', kw['%s_first' % k], ': k', kw['%s_last' % k]
-					print '-'*64
-					exec('queries.append(self.tbl_obj.q.%s>="%s")' % (k, kw[k+'_first']))
-					exec('queries.append(self.tbl_obj.q.%s<="%s")' % (k, kw[k+'_last']))
-					if not self.fields.has_key(k):
-						self.fields[k] = {}
-					self.fields[k]['value'] = kw[k+'_first']
-			print queries
-			rows = self._get_query_results(
-					self.tbl_obj.q.deleted==False,
-					*queries
-				)
+			rows = self._get_rows_detailed_search(**kw)
 		else:
 			self.s_field = s_field = ''
 			self.s_value = s_value = ''
-			rows = self._get_query_results(
-					self.tbl_obj.q.deleted==False,
-				)
+			rows = self._get_query_results()
 		return rows
 
 	def _item(self, id, **kw):
@@ -462,15 +495,7 @@ class BaseController(controllers.Root):
 		#hub.begin()
 		for id in select:
 			if int(id) > 0:
-				item = self.tbl_obj.get(id)
-				#item.delete(id) # do this instead if the model has no delete field
-				item.deleted = True
-				for field in self.detail_fields:
-					try:
-						exec('value = item.%s' % field)
-						setattr(item, field, 'deleted%s\b%s' % (item.id, value))
-					except:
-						pass
+				self._delete_item(id)
 		#hub.commit()
 		#hub.end()
 		turbogears.flash("Successfully deleted entry") 
@@ -528,7 +553,10 @@ class BaseController(controllers.Root):
 		#self.model.hub.begin()
 		kw = self.validate(**kw)
 		if new == 'True':
-			entry = self.tbl_obj(deleted=False, **kw)
+			if hasattr(self.tbl_obj, 'deleted'):
+				entry = self.tbl_obj(deleted=False, **kw)
+			else:
+				entry = self.tbl_obj(**kw)
 		else:
 			entry = self.tbl_obj.get(id)
 			for k,v in kw.items():
@@ -722,7 +750,10 @@ class BaseController(controllers.Root):
 			period = ''
 		prefix = '%s%s' % (pre, period)
 		tbl = self.tbl_obj
-		code = tbl.select(tbl.q.deleted==False).max(field)
+		if hasattr(self.tbl_obj.q, 'deleted'):
+			code = tbl.select(tbl.q.deleted==False).max(field)
+		else:
+			code = tbl.select().max(field)
 		if code and re.search(prefix, code):
 			count = get_count(code)+1
 		else:

@@ -118,7 +118,7 @@
 		?>
 		<td>
 			<span py:for="action in ('details', 'edit', 'delete')" py:if="action in actions">
-				<a href="${action}?id=${row['id']}">${beautify(action)}</a>
+				<a href="${action}?id=${row['id']}">${action.capitalize()}</a>
 			</span>
 		</td>
 		<td py:for="field in column_fields">
@@ -212,10 +212,10 @@ search_details = list(search_fields)
 		>-- select field --</option>
 		<option py:for="detail in search_details" value="${detail}"
 		py:if="search_field==detail" selected="selected"
-		>${fields[detail].get('description', beautify(detail))}</option>
+		>${fields[detail].get('description', detail.capitalize())}</option>
 		<option py:for="detail in search_details" value="${detail}"
 		py:if="search_field!=detail"
-		>${fields[detail].get('description', beautify(detail))}</option>
+		>${fields[detail].get('description', detail.capitalize())}</option>
 	</select>
 
 	<div id="search_div_" style="display: inline;"></div>
@@ -296,7 +296,7 @@ search_details = list(search_fields)
 	add = False
 	if fields[detail].has_key('add'):
 		add = fields[detail]['add']
-	description = fields[detail].get('description', beautify(detail))
+	description = fields[detail].get('description', detail.capitalize())
 	?>
 
 	<span py:if="col_type in (str, unicode, 'text')">
@@ -477,7 +477,7 @@ search_details = list(search_fields)
 	</table>
 
 	<span py:for="action in ('edit', 'delete', 'verify_delete', 'cancel')" py:if="action in actions">
-		<a href="${action}?id=${entry_id}">${beautify(action)}</a>
+		<a href="${action}?id=${entry_id}">${action.capitalize()}</a>
 	</span>
 
 	<!--input type="submit" id="action" name="action" value="Edit"/-->

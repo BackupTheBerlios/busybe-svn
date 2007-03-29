@@ -106,6 +106,7 @@ class Menu(controllers.Root):
 		return dict(msg=msg)
 
 	@expose(template='%s.templates.menu' % pkg)
+	@expose('json')
 	def index(self):
 		import time
 		now = time.ctime()
@@ -123,7 +124,6 @@ class Menu(controllers.Root):
 				head = head,
 				labels = labels,
 				modules = modules,
-				now=now,
 				title = title,
 			)
 
@@ -155,7 +155,7 @@ class Base(controllers.RootController):
 			title = re.sub('.*\.', '', self.__class__.__name__)
 		page_dict['title'] = beautify(title)
 		page_dict['head'] = page_dict['title']
-		page_dict['beautify'] = beautify
+		#page_dict['beautify'] = beautify
 		return page_dict
 
 	def _delete(self, id, tbl=None, **kw):
@@ -897,6 +897,7 @@ class Base(controllers.RootController):
 		return self._action(action, **kw)
 
 	@expose()
+	@expose('json')
 	def cancel(self, **kw):
 		flash('')
 		try: del self.actions
@@ -909,6 +910,7 @@ class Base(controllers.RootController):
 		redirect(url)
 
 	@expose(template='%s.templates.details' % pkg)
+	@expose('json')
 	def details(self, id, **kw):
 		page_dict = self._details(id, **kw)
 		return page_dict
@@ -922,6 +924,7 @@ class Base(controllers.RootController):
 		return self.details(id, **kw)
 
 	@expose(template='%s.templates.edit' % pkg)
+	@expose('json')
 	def edit(self, id, **kw):
 		page_dict = self._edit(id, **kw)
 		return page_dict
@@ -933,33 +936,39 @@ class Base(controllers.RootController):
 		return page_dict
 
 	@expose(template='%s.templates.item' % pkg)
+	@expose('json')
 	def item(self):
 		page_dict = get_dict(self._item())
 		return page_dict
 
 	@expose(template='%s.templates.search' % pkg)
+	@expose('json')
 	def search(self, **kw):
 		kw['search'] = 'Search'
 		page_dict = self._list(**kw)
 		return page_dict
 
 	@expose(template='%s.templates.list' % pkg)
+	@expose('json')
 	def list(self, **kw):
 		page_dict = self._list(**kw)
 		return page_dict
 
 	@expose(template='%s.templates.edit' % pkg)
+	@expose('json')
 	def new(self, **kw):
 		page_dict = get_dict(self._edit(**kw))
 		return page_dict
 
 	@expose()
+	@expose('json')
 	def save(self, id=None, **kw):
 		self._save(id, **kw)
 		flash('Successfully saved entry')
 		redirect('index')
 
 	@expose()
+	@expose('json')
 	def verify_delete(self, id, **kw):
 		try: del self.actions
 		except AttributeError: pass

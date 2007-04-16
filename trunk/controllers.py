@@ -5,8 +5,6 @@ import cherrypy
 import turbogears
 from turbogears import controllers, expose, validate, redirect
 
-from busybe import json
-
 import model
 import re
 from conf import pkg
@@ -14,11 +12,45 @@ from base_controller import *
 from base_controller import _dbg
 from sqlobject.sqlbuilder import AND,OR,NOT,LEFTJOINOn
 
+import hud_cti
+
 
 log = logging.getLogger("busybe.controllers")
 
 
-class Person(Base):
+class AuthTables(object):
+	user_group = model.Community
+
+
+class BusyBeBase(Base):
+	def _set_auth_tables(self):
+		self.auth_dict['user_group'] = model.Community
+
+
+class BusyBeMenu(Menu):
+	def _set_auth_tables(self):
+		self.auth_dict['user_group'] = model.Community
+
+
+class User(BusyBeBase):
+	tbl = model.User
+	fields = dict(
+			password = dict(
+					type = 'passwd',
+				),
+		)
+
+
+class AccessLevel(BusyBeBase):
+	show = 10
+	tbl = model.AccessLevel
+
+
+class Permission(BusyBeBase):
+	tbl = model.Permission
+
+
+class Person(BusyBeBase):
 	show = 3
 	tbl = model.Person
 	default_fields = (
@@ -44,7 +76,7 @@ class Person(Base):
 		)
 
 
-class Community(Base):
+class Community(BusyBeBase):
 	tbl = model.Community
 	title = 'Group'
 	default_fields = (
@@ -61,6 +93,7 @@ class Community(Base):
 
 	@expose(template='%s.templates.edit' % pkg)
 	def edit(self, id, **kw):
+		self.auth('edit')
 		page_dict = self._edit(id, **kw)
 		page_dict['fields']['leader']['options'] = self.get_persons(id)
 		return page_dict
@@ -80,13 +113,8 @@ class Community(Base):
 			)
 		return options
 
-	@expose()
-	def save0(self, id=None, **kw):
-		row = self._save(id, **kw)
-		turbogears.redirect('index')
 
-
-class PersonCommunity(Base):
+class PersonCommunity(BusyBeBase):
 	tbl = model.PersonCommunity
 	title = 'Membership'
 	default_fields = (
@@ -96,11 +124,11 @@ class PersonCommunity(Base):
 		)
 
 
-class Event(Base):
+class Event(BusyBeBase):
 	tbl = model.Event
 
 
-class Participant(Base):
+class Participant(BusyBeBase):
 	tbl = model.Participant
 	fields = dict(
 			event = dict(
@@ -110,12 +138,23 @@ class Participant(Base):
 		)
 
 
-class Root(Menu):
-	title = 'Menu'
+class CallType(BusyBeBase):
+	show = 5
+	tbl = model.Calltypecat
+
+
+class Root(BusyBeMenu):
+	title = 'BusyBeMenu'
 	person = Person()
 	community = Community()
 	membership = PersonCommunity()
 	event = Event()
 	participant = Participant()
+	inbound = hud_cti.Inbound()
+	outbound = hud_cti.Outbound()
+	user = User()
+	access_level = AccessLevel()
+	permission = Permission()
+	call_type = CallType()
 
 

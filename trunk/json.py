@@ -53,6 +53,10 @@ def jsonify_datetime_col(obj):
 def jsonify_float_col(obj):
 	return str(obj)
 
+@jsonify.when('isinstance(obj, sqlobject.SOForeignKey)')
+def jsonify_int_col(obj):
+	return str(obj)
+
 @jsonify.when('isinstance(obj, sqlobject.SOIntCol)')
 def jsonify_int_col(obj):
 	return str(obj)

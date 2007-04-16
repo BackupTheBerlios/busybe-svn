@@ -2,8 +2,9 @@ from sqlobject import *
 
 from turbogears.database import PackageHub
 from datetime import datetime
+from conf import pkg
 
-hub = PackageHub("busybe")
+hub = PackageHub(pkg)
 __connection__ = hub
 
 # class YourDataClass(SQLObject):
@@ -14,6 +15,25 @@ class BusyBe(SQLObject):
 	deleted = BoolCol(notNone=True, default=False)
 	#date_entered = DateTimeCol(notNone=True, default=sqlbuilder.func.NOW())
 	date_entered = DateTimeCol(notNone=True, default=datetime.now())
+
+
+class User(BusyBe):
+	user = UnicodeCol(length=128, alternateID=True)
+	password = UnicodeCol(length=128, notNone=True)
+	user_group = ForeignKey('Community', notNone=True)
+	access_level = ForeignKey('AccessLevel', notNone=True)
+
+
+class AccessLevel(BusyBe):
+	access_level = UnicodeCol(length=128, alternateID=True)
+	permission = MultipleJoin('Permission')
+
+
+class Permission(BusyBe):
+	#user_group = ForeignKey('Community', notNone=True)
+	access_level = ForeignKey('AccessLevel', notNone=True)
+	class_name = UnicodeCol(length=128, notNone=True)
+	function = UnicodeCol(length=128, notNone=True)
 
 
 class Community(BusyBe):
@@ -54,5 +74,27 @@ class PersonCommunity(BusyBe):
 	person = ForeignKey('Person', notNone=True)
 	active = BoolCol(notNone=True, default=True)
 
+
+class Inbound(BusyBe):
+	agent = IntCol(notNone=True)
+	number = IntCol(notNone=True)
+	start = DateTimeCol(notNone=True, default=datetime.now())
+	end = DateTimeCol(notNone=True)
+	comment = UnicodeCol()
+
+
+class Outbound(BusyBe):
+	agent = IntCol(notNone=True)
+	number = IntCol(notNone=True)
+	start = DateTimeCol(notNone=True, default=datetime.now())
+	end = DateTimeCol(notNone=True)
+	comment = UnicodeCol()
+
+
+class Calltypecat(SQLObject):
+	class sqlmeta:
+		idName = 'calltypecatid'
+	categoryname = UnicodeCol(length=20)
+	calltype = UnicodeCol(length=1)
 
 

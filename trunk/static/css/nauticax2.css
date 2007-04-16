@@ -1,0 +1,381 @@
+/* CSS by STUDIO7DESIGNS*/
+html, body {
+    margin: 0px auto;
+	padding:0px;
+}
+body {
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 11px;
+	font-style: normal;
+	line-height: 18px;
+	font-weight: bold;
+	font-variant: normal;
+	text-transform: none;
+	color: #929291;
+	text-decoration: none;
+	background-color:#FFF;
+}
+
+a {color:#4E69B4; text-decoration:none;}
+.main
+{
+width:860px;
+height:auto;
+margin:0px auto;
+padding:0px;
+}
+.header {
+    background: url(/static/images/nauticax2/body-top-bg.gif) center top no-repeat #FFF;
+    height:62px;
+	margin:0 auto;
+	padding:0px;
+	width:850px;
+	padding:7px 10px 0px 0px;
+	}
+.header-top
+{
+width:850px;
+height:22px;
+padding-bottom:9px;
+text-align:right;
+}
+.login-bg
+{
+width:122px;
+height:22px;
+background:url(/static/images/nauticax2/login-bg.gif) left top no-repeat;
+text-align:center;
+color:#FFF;
+float:right;
+}
+.search-box
+{
+width:130px;
+height:22px;
+float:left;
+padding-left:598px;
+text-align:left;
+}
+.search-input
+{
+border:none;
+background:url(/static/images/nauticax2/search-bg.gif) left center no-repeat;
+height:18px;
+width:117px;
+padding-left:4px;
+line-height:18px;
+}
+.header-bottom
+{
+height:31px;
+padding-left:166px;
+text-align:left;
+}
+/* CSS Menu */
+#navcontainer {
+        margin:0px;
+        padding: 0;
+        height: 31px;
+}
+
+#navcontainer ul {
+        border: 0;
+        margin: 0;
+        padding: 0;
+        list-style-type: none;
+        text-align: center;
+}
+
+#navcontainer ul li {
+        display: block;
+        float: left;
+        text-align: center;
+        padding: 0;
+        margin: 0;
+		background: url(/static/images/nauticax2/menu-normal-bg.gif) center center no-repeat;
+		height:31px;
+}
+
+#navcontainer ul li a {
+        background: url(/static/images/nauticax2/menu-normal-bg.gif) center center no-repeat;
+        width: 83px;
+        height: 31px;
+        padding: 0px;
+        margin: 0px;
+        color: #FFF;
+        text-decoration: none;
+        display: block;
+        text-align: center;
+        font: bold 14px/30px Arial, Helvetica, sans-serif;
+}
+
+#navcontainer ul li a:hover {
+        color: #555;
+        background: url(/static/images/nauticax2/menu-hover-bg.gif) center center no-repeat;
+		height:31px;
+}
+
+#navcontainer li.active a {
+        color: #333;
+        background: url(/static/images/nauticax2/menu-active-bg.gif) center center no-repeat;
+		height:31px;
+}
+
+.body-main
+{
+width:860px;
+height:auto;
+margin:0px auto;
+text-align:left;
+}
+.body-top
+{
+padding-bottom:20px;
+width:860px;
+margin:0px auto;
+height:426px;
+}
+.body-left
+{
+width:420px;
+height:auto;
+float:left;
+text-align:left;
+background:url(/static/images/nauticax2/logo-bottom.gif) left top no-repeat;
+padding-top:142px;
+}
+.left-box
+{
+width:408px;
+padding-left:6px;
+float:left;
+text-align:left;
+}
+.body-right
+{
+width:440px;
+height:auto;
+float:right;
+text-align:left;
+}
+.blank38
+{
+width:440px;
+height:38px;
+}
+.body-right1
+{
+width:425px;
+height:auto;
+float:right;
+text-align:left;
+background:url(/static/images/nauticax2/body-middle-line.gif) left top repeat-y;
+padding-left:15px;
+}
+.box
+{
+border:6px solid #D3ECFF;
+}
+.box-title
+{
+height:30px;
+border-bottom:2px solid #D3ECFF;
+}
+.welcome-inside
+{
+padding:6px;
+text-align:left;
+}
+.fav-project
+{
+padding:12px 0px;
+clear:both;
+}
+.fav-text
+{
+background:url(/static/images/nauticax2/fav-image.gif) left top no-repeat;
+padding-left:80px;
+height:93px;
+text-align:left;
+}
+.title-16 {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 18px;
+	font-style: normal;
+	line-height: 28px;
+	font-weight: bold;
+	font-variant: normal;
+	text-transform: none;
+	color: #4E69B4;
+	text-decoration: none;
+	background-color:#FFF;
+	padding-left:8px;
+}
+.title-14 {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 14px;
+	font-style: normal;
+	line-height: 20px;
+	font-weight: bold;
+	font-variant: normal;
+	text-transform: none;
+	color: #4E69B4;
+	text-decoration: none;
+	background-color:#FFF;
+}
+.body-bottom
+{
+background:url(/static/images/nauticax2/body-middle-line.gif) left top repeat-x;
+padding-bottom:15px;
+width:860px;
+margin:0px auto;
+padding-top:26px;
+height:200px;
+}
+.bottom-box1
+{
+width:205px;
+border-right:1px solid #D1D1D1;
+text-align:left;
+float:left;
+padding-left:5px;
+}
+.bottom-box1-inside
+{
+width:192px;
+height:auto;
+}
+.bottom-box-th
+{
+background:url(/static/images/nauticax2/image-box-bg.gif) left top no-repeat;
+padding-left:11px;
+padding-top:12px;
+padding-bottom:12px;
+padding-right:13px;
+}
+.green-link-box
+{
+padding:10px 0px 10px 15px;
+}
+.read-more {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 13px;
+	font-style: normal;
+	line-height: 16px;
+	font-weight: bold;
+	font-variant: normal;
+	text-transform: none;
+	color: #57B121;
+	text-decoration: underline;
+	background-color:#FFF;
+}
+.read-more:hover
+{
+color:#009933;
+text-decoration:underline;
+}
+.login-box
+{
+float:right;
+padding:10px;
+width:195px;
+height:160px;
+border:2px solid #D8D8D8;
+background-color:#F6F6F6;
+color:#474747;
+}
+.input-login
+{
+width:190px;
+height:18px;
+padding-left:3px;
+background-color:#FFFFFF;
+border:1px solid #999;
+font-family: Verdana, Arial, Helvetica, sans-serif;
+font-size: 11px;
+font-style: normal;
+line-height: 18px;
+font-weight: normal;
+font-variant: normal;
+text-transform: none;
+color: #333;
+text-decoration: none;
+}
+.footer
+{
+width:860px;
+height:26px;
+border-top:4px solid #CBCBCB;
+border-bottom:5px solid #FFF;
+background-color:#E8E8E8;
+text-align:center;
+color:#A2A2A2;
+clear:both;
+font-family: Verdana, Arial, Helvetica, sans-serif;
+font-size: 10px;
+font-style: normal;
+line-height: 26px;
+font-weight: bold;
+font-variant: normal;
+text-transform: none;
+text-decoration: none;
+}
+.footer-link
+{
+font-family: Verdana, Arial, Helvetica, sans-serif;
+font-size: 10px;
+font-style: normal;
+line-height: 26px;
+font-weight: bold;
+font-variant: normal;
+text-transform: none;
+color: #A2A2A2;
+text-decoration: none;
+}
+.footer-link:hover
+{
+color:#333;
+text-decoration:underline;
+}
+.white-link
+{
+font-family: Verdana, Arial, Helvetica, sans-serif;
+font-size: 10px;
+font-style: normal;
+line-height: 22px;
+font-weight: normal;
+font-variant: normal;
+text-transform: none;
+color: #FFF;
+text-decoration: none;
+}
+.white-link:hover
+{
+color:#FFF;
+text-decoration:underline;
+}
+
+
+/* BusyBe customizations */
+
+.flash {
+	background-color: #dc9b09;
+	border: solid 1px #d7d7d7;
+	color: #ffffff;
+}
+#page_list table thead th {
+	background-color: #6cac3f;
+	color: #ffffff;
+}
+#page_list table thead th a:link {
+	color: #ffffff;
+}
+#page_list table tbody tr.odd_row td {
+	background-color: #d3ecff;
+}
+#page_list table tbody tr.even_row td {
+	background-color: #f6f6f6;
+}
+
+
+

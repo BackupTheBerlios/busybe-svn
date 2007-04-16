@@ -16,8 +16,16 @@
 
 <div id="main">
 
-<div py:replace="show_list_page()" />
-<script py:replace="list_js()"></script>
+<form action="signin">
+	<dl>
+		<dt>Username:</dt>
+		<dd><input id="user" name="user" /></dd>
+		<dt>Password:</dt>
+		<dd><input type="password" id="password" name="password" /></dd>
+		<dt></dt>
+		<dd><input type="submit" value="Login" /></dd>
+	</dl>
+</form>
 
 </div><!-- main -->
 

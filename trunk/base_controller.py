@@ -8,13 +8,14 @@ from turbogears import controllers, expose, validate, redirect, flash
 
 import model
 import re
-from conf import pkg
+from conf import pkg, template_dir, theme
 import datetime
 from MySQLdb.connections import OperationalError, IntegrityError
 import sqlobject
 from sqlobject import SQLObjectNotFound 
 from sqlobject.sqlbuilder import AND,OR,NOT,LEFTJOINOn
 exec('from %s import json' % pkg)
+import crypt, random
 
 
 Now = datetime.datetime.now
@@ -24,11 +25,16 @@ log = logging.getLogger("%s.controllers" % pkg)
 
 def _dbg(*msg):
 	print '----'
+	import os
+	a = os.system('/bin/date')
 	try:
 		print msg
 	except:
 		print str(msg)
 	print '----'
+
+def _get_temp(tmp):
+	return '%s.%s.%s' % (pkg, template_dir, tmp)
 
 def beautify(text):
 	'''Capitalize the first letter of each word.
@@ -55,6 +61,14 @@ def get_dict(orig, dest={}):
 		dest[k] = v
 	return dest
 
+def get_salt(chars=None):
+	'''Get two random letter/number to be used for the crypt.
+	'''
+	if not chars:
+		import string
+		chars = string.letters + string.digits
+	return random.choice(chars) + random.choice(chars)
+
 def hard_restart():
 	'''Kill all python processes to spawn a new one.
 	'''
@@ -68,7 +82,111 @@ def soft_restart():
 	p = Popen('touch megarc/controllers.py', shell=True, stdout=PIPE, stderr=PIPE)
 
 
-class Menu(controllers.Root):
+class AuthTables(object):
+	pass
+
+
+class Auth(controllers.Root):
+	auth_dict = {}
+
+	def _get_template(self, tmp):
+		return '%s.%s.%s' % (pkg, template_dir, tmp)
+
+	def _set_auth_tables(self):
+		pass
+
+	def _auth(self, function):
+		return True # remove comment to disable authentication
+		self.set_auth_attr()
+		class_name = self.__class__.__name__
+		if cherrypy.session.has_key('user'):
+			username = cherrypy.session['user']
+		else:
+			return 0
+		user = self.auth_dict['user'].byUser(username)
+		access_level = user.access_level
+		user_group = user.user_group
+		permissions = self.auth_dict['permission'].selectBy(
+				access_level = access_level,
+				#user_group = user_group,
+				class_name = class_name,
+				function = function,
+			)
+		if access_level.access_level == 'admin':
+			return True
+		authorized = False
+		for permission in permissions:
+			if permission.access_level == access_level:
+				authorized = True
+				break
+		if authorized:
+			return True
+		else:
+			return 'Access not allowed for class %s action %s.' % (
+					class_name,
+					function,
+				)
+
+	def set_auth_attr(self):
+		self._set_auth_tables()
+		for tbl in ('user', 'access_level', 'user_group', 'permission'):
+			if not self.auth_dict.has_key(tbl):
+				class_name = beautify(tbl).replace(' ', '')
+				model_class = getattr(model, class_name)
+				self.auth_dict[tbl] = model_class
+
+	def auth(self, function='menu'):
+		'''Find out if the user is authorized to do the given action.'''
+		#return True # Comment out to disable authentication
+		authorized = self._auth(function)
+		if authorized == True:
+			return True
+		elif authorized == False:
+			raise cherrypy.HTTPRedirect(turbogears.url('/login'))
+		else:
+			redirect('error?msg=%s' % authorized)
+		redirect('error?msg=%s' % 'An Error occurred while logging in.')
+
+	@turbogears.expose(_get_temp('login'))
+	def login(self, **kw):
+		title = 'Login'
+		head = 'Login'
+		return dict(
+				head = head,
+				session = dict(cherrypy.session),
+				title = title,
+				template_dir = template_dir,
+				theme = theme,
+				#tg_template = str(self._get_template('login')),
+			)
+	login.__doc__ = '''Display a login page.'''
+
+	@turbogears.expose()
+	def logout(self, **kw):
+		if cherrypy.session.has_key('user'):
+			del cherrypy.session['user']
+		raise cherrypy.HTTPRedirect(turbogears.url('/'))
+
+	@turbogears.expose()
+	def signin(self, user, password):
+		username = user
+		try:
+			user = model.User.byUser(user)
+		except SQLObjectNotFound:
+			flash('Invalid username/password.')
+			redirect('/login')
+		good = False
+		salt = user.password[0] + user.password[1]
+		passwd = crypt.crypt(password, salt)
+		if user.password == passwd:
+			cherrypy.session['user'] = username
+			redirect(turbogears.url('.'))
+		else:
+			flash('Invalid username/password.')
+			redirect('/login')
+
+
+class Menu(Auth):
 	exclude = [
 			'accesslog',
 			'error',
@@ -86,30 +204,52 @@ class Menu(controllers.Root):
 		]
 
 	def _get_labels(self, modules):
-		labels = {}
+		labels = []
 		for module in modules:
 			try:
 				mod = getattr(self, module)
 				mod._common()
-				labels[module] = mod.title
+				labels.append(mod.title)
 			except AttributeError:
-				#labels[module] = ' '.join(word.capitalize() for word in module.split('_'))
-				labels[module] = beautify(module)
+				labels.append(beautify(module))
 		return labels
 
 	def _get_modules(self):
-		modules = (attr for attr in dir(self.__class__) if attr not in self.exclude and attr != 'get_modules' and not re.match('^_', attr))
+		mod_list = dir(self.__class__)
+		modules = [attr for attr in mod_list if attr not in self.exclude and attr != 'get_modules' and not re.match('^_', attr)]
+		tmp = list(modules)
+		for mod in tmp:
+			if getattr(self, mod)._auth('list') != True:
+				modules.remove(mod)
 		return list(modules)
 
-	@expose(template='%s.templates.error' % pkg)
-	def error(self, msg):
-		return dict(msg=msg)
+	def _set_excludes(self):
+		excludes = (
+				'auth', 
+				'auth_dict',
+				'set_auth_attr',
+			)
+		for exclude in excludes:
+			if exclude not in self.exclude:
+				self.exclude.append(exclude)
 
-	@expose(template='%s.templates.menu' % pkg)
+	@expose(_get_temp('error'))
+	def error(self, msg):
+		return dict(
+				head='Error',
+				msg=msg,
+				session = dict(cherrypy.session),
+				title = 'Error',
+				#tg_template = str(self._get_template('error')),
+			)
+
 	@expose('json')
+	@expose(_get_temp('menu'))
 	def index(self):
+		self.auth('menu')
 		import time
 		now = time.ctime()
+		self._set_excludes()
 		try:
 			head = self.head
 		except AttributeError:
@@ -124,11 +264,15 @@ class Menu(controllers.Root):
 				head = head,
 				labels = labels,
 				modules = modules,
+				session = dict(cherrypy.session),
 				title = title,
+				template_dir = template_dir,
+				theme = theme,
+				#tg_template = str(self._get_template('menu')),
 			)
 
 
-class Base(controllers.RootController):
+class Base(Auth):
 	show = 3
 	page = 1
 
@@ -156,6 +300,9 @@ class Base(controllers.RootController):
 		page_dict['title'] = beautify(title)
 		page_dict['head'] = page_dict['title']
 		#page_dict['beautify'] = beautify
+		page_dict['session'] = dict(cherrypy.session)
+		page_dict['template_dir'] = template_dir
+		page_dict['theme'] = theme
 		return page_dict
 
 	def _delete(self, id, tbl=None, **kw):
@@ -172,7 +319,8 @@ class Base(controllers.RootController):
 				self._delete(mtm_row.id, self.mtm_tbl)
 		if hasattr(row, 'deleted'):
 			row.deleted = True
-			col_dict = tbl._columnDict
+			#col_dict = tbl._columnDict
+			col_dict = tbl.sqlmeta.columns
 			for field, col in col_dict.iteritems():
 				if col.unique:
 					setattr(row, field, '%s\b%s' % (id, getattr(row, field)))
@@ -220,7 +368,8 @@ class Base(controllers.RootController):
 		tbl = getattr(model, detail['table'])
 		if not detail.has_key('column'):
 			# If no column is defined, get the fist unique column we can find
-			col_dict = tbl._columnDict
+			#col_dict = tbl._columnDict
+			col_dict = tbl.sqlmeta.columns
 			for k, v in col_dict.iteritems():
 				if v.unique:
 					detail['column'] = k
@@ -243,7 +392,23 @@ class Base(controllers.RootController):
 				)
 			if detail.has_key('format'):
 				for key, opt in detail['options'].iteritems():
-					detail['options'][key][detail['column']] = detail['format'] % opt[detail['column']]
+					i = j = k = key
+					try:
+						detail['options'][i][j][k][detail['column']] = detail['format'] % opt[j][k][detail['column']]
+					except KeyError:
+						try:
+							detail['options'][i][j][k] = {}
+							detail['options'][i][j][k][detail['column']] = detail['format'] % opt[j][k][detail['column']]
+						except KeyError:
+							try:
+								detail['options'][i][j] = {}
+								detail['options'][i][j][k] = {}
+								detail['options'][i][j][k][detail['column']] = detail['format'] % opt[j][k][detail['column']]
+							except KeyError:
+								detail['options'][i] = {}
+								detail['options'][i][j] = {}
+								detail['options'][i][j][k] = {}
+								detail['options'][i][j][k][detail['column']] = detail['format'] % opt[j][k][detail['column']]
 		return detail
 
 	def _get_field_required(self, field):
@@ -304,25 +469,27 @@ class Base(controllers.RootController):
 		return page_dict
 
 	def _get_page_details_actions(self):
-		actions = []
-		#actions = {}
-		if not hasattr(self, 'actions'):
-			actions = (
-					'add',
-					'delete',
-					'details',
-					'edit',
-					'list',
-					'cancel',
-				)
-			#actions = dict(
-			#		add = 1,
-			#		delete = 1,
-			#		details = 1,
-			#		edit = 1,
-			#		list = 1,
-			#	)
-			self.actions = actions
+		default_actions = (
+				'add',
+				'delete',
+				'details',
+				'edit',
+				'list',
+				'cancel',
+				'new',
+			)
+		if hasattr(self, 'actions'):
+			if type(self.actions) != list:
+				self.actions = list(self.actions)
+			for action in default_actions:
+				if action not in self.actions:
+					self.actions.append(action)
+		else:
+			self.actions = list(default_actions)
+		tmp = list(self.actions)
+		for action in tmp:
+			if self._auth(action) != True:
+				self.actions.remove(action)
 		return self.actions
 
 	def _get_page_details_fields(self):
@@ -332,8 +499,11 @@ class Base(controllers.RootController):
 		self._set_col_dict()
 		if not hasattr(self, 'default_fields'):
 			self.default_fields = list(self.all_fields)
-			self.default_fields.remove('deleted')
-			self.default_fields.remove('date_entered')
+			try:
+				self.default_fields.remove('deleted')
+				self.default_fields.remove('date_entered')
+			except ValueError:
+				pass
 		if not hasattr(self, 'fields'):
 			self.fields = {}
 			for k in self.all_fields:
@@ -343,16 +513,35 @@ class Base(controllers.RootController):
 				if not self.fields.has_key(k):
 					self.fields[k] = {}
 		page_dict['fields'] = self.fields
-		for page_attr in (
+		page_attrs = (
 				'column_fields',
 				'detail_fields',
 				'edit_fields',
 				'search_fields',
 				#'quick_search_fields',
 				#'_fields',
-			):
+			)
+		for page_attr in page_attrs:
 			if not hasattr(self, page_attr):
 				setattr(self, page_attr, list(self.default_fields))
+		for k in self.default_fields:
+			if self.fields[k].has_key('type'):
+				col_type = self.fields[k]['type']
+				if col_type == 'passwd':
+					if type(self.detail_fields) != list:
+						self.detail_fields = list(self.detail_fields)
+					try:
+						self.detail_fields.remove(k)
+					except ValueError:
+						pass
+				if col_type in ('passwd', 'text'):
+					if type(self.column_fields) != list:
+						self.column_fields = list(self.column_fields)
+					try:
+						self.column_fields.remove(k)
+					except ValueError:
+						pass
+		for page_attr in page_attrs:
 			page_dict[page_attr] = getattr(self, page_attr)
 		if hasattr(self, 'hidden_fields'):
 			# Make sure the fields in hidden_fields are not in edit_fields and vice-versa
@@ -377,7 +566,7 @@ class Base(controllers.RootController):
 		value = getattr(row, field)
 		detail = self.fields[field]
 		if detail['type'] == list or detail['type'] == 'foreign_text':
-			value = detail['options'][value.id][detail['column']]
+			value = detail['options'][value.id][value.id][value.id][detail['column']]
 			#try:
 			#	column = detail['column']
 			#	if type(column) == tuple:
@@ -463,6 +652,8 @@ class Base(controllers.RootController):
 				value = getattr(value, detail['column'])
 			except AttributeError:
 				value = None
+		elif col_type == 'passwd':
+			value = None
 		elif col_type == bool:
 			if not value:
 				value = False
@@ -538,6 +729,7 @@ class Base(controllers.RootController):
 			rows_obj = rows_obj[first_row:last_row]
 		# Get Rows from the DB and put it in a dictionary
 		tmp_rows_dict = {}
+		rows_dict = {}
 		for row in rows_obj:
 			key = row.id
 			tmp_rows_dict[key] = {}
@@ -546,9 +738,18 @@ class Base(controllers.RootController):
 				tmp_rows_dict[key][field] = self._get_row_value(row, field)
 		# Sort the page by the field given
 		if not kw.has_key('sort_page_by') or kw['sort_page_by'] == 'id':
-			rows_dict = tmp_rows_dict
+			for id, row in tmp_rows_dict.iteritems():
+				try:
+					rows_dict[id][id][id] = row
+				except KeyError:
+					try:
+						rows_dict[id][id] = {}
+						rows_dict[id][id][id] = row
+					except KeyError:
+						rows_dict[id] = {}
+						rows_dict[id][id] = {}
+						rows_dict[id][id][id] = row
 		else:
-			rows_dict = {}
 			for id, row in tmp_rows_dict.iteritems():
 				sort_page = row[kw['sort_page_by']]
 				try: sort_page = sort_page.lower()
@@ -557,7 +758,17 @@ class Base(controllers.RootController):
 				try: sort_rows = sort_rows.lower()
 				except AttributeError: pass
 				key = (sort_page, sort_rows, id)
-				rows_dict[key] = row
+				#rows_dict[key] = row
+				try:
+					rows_dict[sort_page][sort_rows][id] = row
+				except KeyError:
+					try:
+						rows_dict[sort_page][sort_rows] = {}
+						rows_dict[sort_page][sort_rows][id] = row
+					except KeyError:
+						rows_dict[sort_page] = {}
+						rows_dict[sort_page][sort_rows] = {}
+						rows_dict[sort_page][sort_rows][id] = row
 		return rows_dict
 
 	def _get_rows_query(self, tbl, where_and=[], where_or=[], **kw):
@@ -578,17 +789,21 @@ class Base(controllers.RootController):
 		return rows
 
 	def _get_rows_query_clause(self, tbl, where_and, where_or):
+		if hasattr(tbl.q, 'deleted'):
+			where_and.append(
+					tbl.q.deleted == False,
+				)
 		if len(where_or) > 0:
 			clause = AND(
-					tbl.q.deleted == False,
 					OR(*where_or),
 					*where_and
 				)
-		else:
+		elif len(where_and) > 0:
 			clause = AND(
-					tbl.q.deleted == False,
 					*where_and
 				)
+		else:
+			clause = None
 		return clause
 
 	def _get_rows_query_detailed_search(self, tbl, where_and, where_or, **kw):
@@ -637,6 +852,9 @@ class Base(controllers.RootController):
 			except ValueError:
 				value = None
 			where_and.append(getattr(tbl.q, field+'ID') == value)
+		elif col_type == 'passwd':
+			self.search_fields.remove(field)
+			self.column_fields.remove(field)
 		else:
 			value = str(value)
 			where_and.append(getattr(tbl.q, field) == value)
@@ -788,9 +1006,12 @@ class Base(controllers.RootController):
 		return value
 
 	def _save_fix_values(self, **kw):
-		url = 'new?'
+		if kw.has_key('id'):
+			url = 'edit?'
+		else:
+			url = 'new?'
 		for k, v in kw.iteritems():
-			if self.fields[k]['type'] != 'passwd':
+			if self.fields.has_key(k) and self.fields[k]['type'] != 'passwd':
 				url += '%s=%s&' % (k, v)
 		tmp_kw = dict(kw)
 		for k, v in tmp_kw.iteritems():
@@ -875,7 +1096,8 @@ class Base(controllers.RootController):
 		return row
 
 	def _set_col_dict(self):
-		col_dict = self.tbl._columnDict
+		#col_dict = self.tbl._columnDict
+		col_dict = self.tbl.sqlmeta.columns
 		self.col_dict = {}
 		for k, v in col_dict.iteritems():
 			self.col_dict[k.replace('ID', '')] = v
@@ -886,7 +1108,8 @@ class Base(controllers.RootController):
 		if value == verify:
 			if value == '':
 				value = None
-			return value
+			else:
+				return crypt.crypt(value, get_salt())
 		else:
 			return False
 
@@ -909,60 +1132,77 @@ class Base(controllers.RootController):
 			url = 'index'
 		redirect(url)
 
-	@expose(template='%s.templates.details' % pkg)
+	@expose(_get_temp('details'))
 	@expose('json')
 	def details(self, id, **kw):
+		self.auth('details')
 		page_dict = self._details(id, **kw)
+		#page_dict['tg_template'] = str(self._get_template('details'))
 		return page_dict
 
 	@expose()
 	def delete(self, id, **kw):
+		self.auth('delete')
 		##TODO: Verify before deleting
 		#page_dict = self._delete(id, **kw)
 		#redirect('details?')
 		self.actions = ('verify_delete', 'cancel', )
 		return self.details(id, **kw)
 
-	@expose(template='%s.templates.edit' % pkg)
+	@expose(_get_temp('edit'))
 	@expose('json')
 	def edit(self, id, **kw):
+		self.auth('edit')
 		page_dict = self._edit(id, **kw)
+		#page_dict['tg_template'] = str(self._get_template('edit'))
 		return page_dict
 
-	@expose(template='%s.templates.error' % pkg)
+	@expose(_get_temp('error'))
 	def error(self, msg):
 		page_dict = self._common()
+		page_dict['head'] = msg
 		page_dict['msg'] = msg
+		page_dict['title'] = msg
+		#page_dict['tg_template'] = str(self._get_template('error'))
 		return page_dict
 
-	@expose(template='%s.templates.item' % pkg)
+	@expose(_get_temp('item'))
 	@expose('json')
 	def item(self):
+		self.auth('item')
 		page_dict = get_dict(self._item())
+		#page_dict['tg_template'] = str(self._get_template('item'))
 		return page_dict
 
-	@expose(template='%s.templates.search' % pkg)
+	@expose(_get_temp('list'))
 	@expose('json')
 	def search(self, **kw):
+		self.auth('list')
 		kw['search'] = 'Search'
 		page_dict = self._list(**kw)
+		#page_dict['tg_template'] = str(self._get_template('search'))
 		return page_dict
 
-	@expose(template='%s.templates.list' % pkg)
+	@expose(_get_temp('list'))
 	@expose('json')
 	def list(self, **kw):
+		self.auth('list')
 		page_dict = self._list(**kw)
+		#page_dict['tg_template'] = str(self._get_template('list'))
 		return page_dict
 
-	@expose(template='%s.templates.edit' % pkg)
+	@expose(_get_temp('edit'))
 	@expose('json')
 	def new(self, **kw):
+		self.auth('new')
 		page_dict = get_dict(self._edit(**kw))
+		#page_dict['tg_template'] = str(self._get_template('edit'))
 		return page_dict
 
 	@expose()
 	@expose('json')
 	def save(self, id=None, **kw):
+		self.auth('save')
 		self._save(id, **kw)
 		flash('Successfully saved entry')
 		redirect('index')
@@ -970,6 +1210,7 @@ class Base(controllers.RootController):
 	@expose()
 	@expose('json')
 	def verify_delete(self, id, **kw):
+		self.auth('delete')
 		try: del self.actions
 		except AttributeError: pass
 		self._delete(id, **kw)

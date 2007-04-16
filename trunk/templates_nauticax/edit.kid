@@ -16,8 +16,7 @@
 
 <div id="main">
 
-<div py:replace="show_list_page()" />
-<script py:replace="list_js()"></script>
+<div py:replace="show_edit_page(values)" />
 
 </div><!-- main -->
 
